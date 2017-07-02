@@ -13,6 +13,11 @@ enum {
 };
 
 /*
+ *	Timeout for wifi station connection in seconds
+ */
+#define CONNECTION_TIMEOUT 10
+
+/*
  * Load wifi configs or creates an http server to receive the configs via POST
  * at http://192.168.0.1/
  */

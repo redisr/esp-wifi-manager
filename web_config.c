@@ -16,7 +16,6 @@
 void 
 task_http_conf_server(void *pvParameters)
 {
-
     httpd_init();
     for (;;) {
         vTaskDelay(10000 / portTICK_PERIOD_MS);
@@ -70,6 +69,6 @@ httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len
 void 
 startConfigManager(void (*_func)(char *))
 {
-    xTaskCreate(&task_http_conf_server, "HTTP Daemon", 1024, NULL, 2, NULL);
+    xTaskCreate(&task_http_conf_server, "HTTP Daemon", 1024, NULL, 1, NULL);
     config_callback = _func;
 }

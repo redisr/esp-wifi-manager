@@ -38,7 +38,6 @@ int
 read_file (char *filename, char *readbuf) 
 {
     const int buf_size = 0x500;
-    uint8_t buf[buf_size];
 
     int fd = open(filename, O_RDONLY);
     if (fd < 0) {
@@ -53,14 +52,13 @@ read_file (char *filename, char *readbuf)
     printf("Read %d bytes\n", read_bytes);
     #endif
 
-    buf[read_bytes] = '\0';    // zero terminate string
-
+    readbuf[read_bytes] = '\0';    // zero terminate string
     close(fd);
     return read_bytes;
 }
 
 int 
-write_file (char *filename, char *writebf) 
+write_file (char *filename, char *writebf, uint8_t len) 
 {
     int fd = open(filename, O_WRONLY|O_CREAT, 0);
     if (fd < 0) {
@@ -70,7 +68,8 @@ write_file (char *filename, char *writebf)
         return 0;
     }
 
-    int written = write(fd, writebf, sizeof(writebf));
+    int written = write(fd, writebf, len);
+    printf("%d written to file\n", written);
     close(fd);
     return written;
 }

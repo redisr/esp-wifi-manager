@@ -10,4 +10,4 @@ int
 read_file (char *filename, char *readbuf);
 
 int
-write_file (char *filename, char *writebf);
+write_file (char *filename, char *writebf, uint8_t len);

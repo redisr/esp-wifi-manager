@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dhcpserver.h>
+#include <limits.h>
 #include "queue.h"
 #include "WifiManager.h"
 #include "web_config.h"
@@ -32,6 +33,16 @@ hasWifiConfig()
 #ifdef WM_DBG
 		printf("Config file exists.\n");
 #endif
+		char *readbuf = (char *) malloc(500 * sizeof(char));
+		int bytes = read_file(FILE_WIFI_CONF, readbuf);
+#ifdef WM_DBG
+		printf("Configuration loaded: %s\n", readbuf);
+#endif
+		if (bytes > 0 && parseJSON(readbuf) != ERROR_OK)
+		{
+			free(readbuf);
+			return false;
+		}
 		return true;
 	}
 #ifdef WM_DBG
@@ -44,8 +55,12 @@ hasWifiConfig()
 uint8_t
 check_wifi_connection()
 {
-	uint8_t status = 255;
-	while (status != STATION_GOT_IP) {
+	uint8_t status = UCHAR_MAX;
+	uint8_t timeout = 0;
+#ifdef WM_DBG
+		printf("Checking connection.");
+#endif
+	while (status != STATION_GOT_IP && timeout < CONNECTION_TIMEOUT) {
 		status = sdk_wifi_station_get_connect_status();
 
 		switch (status) {
@@ -77,8 +92,15 @@ check_wifi_connection()
 #endif
 			break;
 		}
-		vTaskDelay(500 / portTICK_PERIOD_MS);
+		timeout ++;
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
+#ifdef WM_DBG
+		printf(".");
+#endif
 	}
+#ifdef WM_DBG
+	printf("\n");
+#endif
 	return status;
 }
 
@@ -95,15 +117,10 @@ configurationDone(QueueHandle_t * queue)
 bool
 init_wifi_client()
 {
-	/* load wifi config file and parse json */
-	char *readbuf = (char *) malloc(500 * sizeof(char));
-	int bytes = read_file(FILE_WIFI_CONF, readbuf);
-	parseJSON(readbuf);
 	/* required to call wifi_set_opmode before station_set_config */
 	sdk_wifi_set_opmode(STATION_MODE);
 	sdk_wifi_station_set_config(&config);
 	sdk_wifi_station_connect();
-	free(readbuf);
 	return check_wifi_connection() == STATION_GOT_IP;
 }
 
@@ -138,17 +155,31 @@ wifi_manager_task(void *pvParameters)
 	mountVol();
 	bool connected = false;
 	bool clearWificonfig = false;
-
+	sdk_wifi_station_set_auto_connect(0);
 	int button = (int) pvParameters;
 	gpio_enable(button, GPIO_INPUT);
 
-	if (gpio_read(button) == ACTIVE) {
+	if (gpio_read(button) == ACTIVE && false) {
+#ifdef WM_DBG
+		printf("Factory reset pressed.\n");
+#endif
 		clearWificonfig = true;
 	}
 	if (!clearWificonfig && hasWifiConfig()) {
+#ifdef WM_DBG
+		printf("Trying to connect to AP.\n");
+#endif
 		connected = init_wifi_client();
+		if (!connected) {
+			write_file(FILE_WIFI_CONF, "", 1);
+			sdk_system_restart();
+		}
+
 	}
 	if (!connected) {
+#ifdef WM_DBG
+		printf("Starting http server.\n");
+#endif
 		init_wifi_ap();
 		startConfigManager((void *) &post_recv_callback);
 		for (;;) {
@@ -161,7 +192,7 @@ wifi_manager_task(void *pvParameters)
 void
 WifiManager(int button, QueueHandle_t * user_main_queue)
 {
-	xTaskCreate(&wifi_manager_task, "WifiManagerTask", 1024, &button, 0, NULL);
+	xTaskCreate(&wifi_manager_task, "WifiManagerTask", 1024, &button, 2, NULL);
 }
 
 /* Json comparison
@@ -212,19 +243,25 @@ parseJSON(char *json_data)
 	for (i = 1; i < r; i++) {
 		if (jsoneq(json_data, &t[i], keys[0]) == 0) {
 			/* We may use strndup() to fetch string value */
-			sprintf((char *) config.ssid, "%s",
-				(json_data + t[i + 1].start));
+			sprintf((char *) config.ssid, "%.*s",
+				t[i+1].end-t[i+1].start, json_data + t[i+1].start);
 			i++;
 		} else if (jsoneq(json_data, &t[i], keys[1]) == 0) {
 			/* We may additionally check if the value is either "true"
 			 * or "false" */
-			sprintf((char *) config.password, "%s", (json_data + t[i + 1].start));
+			sprintf((char *) config.password, "%.*s", t[i+1].end-t[i+1].start,
+					json_data + t[i+1].start);
 			i++;
 		}
 	}
 	if (!strcmp((char *) config.ssid, "") ||
 	     !strcmp((char *) config.password, ""))
+	{
+#ifdef WM_DBG
+		printf("JSON missing field.\n");
+#endif
 		return ERROR_FIELD_MISSING;
+	}
 	return ERROR_OK;
 }
 
@@ -236,6 +273,9 @@ post_recv_callback(char *json_data)
 {
 	if (parseJSON(json_data) != ERROR_OK)
 		return;
-	write_file(FILE_WIFI_CONF, json_data);
+#ifdef WM_DBG
+	printf("data: %s\tdata_len: %d\n", json_data, strlen(json_data));
+#endif
+	write_file(FILE_WIFI_CONF, json_data, strlen(json_data));
 	sdk_system_restart();
 }
